@@ -74,6 +74,10 @@ func init() {
 					"The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches,"+
 						"the document is updated or replaced accordingly, otherwise it is created.",
 				).HasDefault(false).AtVersion("3.60.0"),
+				docs.FieldBool(
+					"ordered",
+					"A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.",
+				).HasDefault(true).Advanced().AtVersion("4.6.1"),
 				docs.FieldInt(
 					"max_in_flight",
 					"The maximum number of parallel message batches to have in flight at any given time."),
@@ -369,9 +373,9 @@ func (m *Writer) WriteBatch(ctx context.Context, msg message.Batch) error {
 
 	// Dispatch any documents which IterateBatchedSend managed to process successfully
 	if len(writeModelsMap) > 0 {
+		opts := options.BulkWrite().SetOrdered(m.conf.Ordered)
 		for collection, writeModels := range writeModelsMap {
-			// We should have at least one write model in the slice
-			if _, err := collection.BulkWrite(context.Background(), writeModels); err != nil {
+			if _, err := collection.BulkWrite(context.Background(), writeModels, opts); err != nil {
 				return err
 			}
 		}

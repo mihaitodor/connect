@@ -14,6 +14,7 @@ type MongoDBConfig struct {
 	FilterMap       string                 `json:"filter_map" yaml:"filter_map"`
 	DocumentMap     string                 `json:"document_map" yaml:"document_map"`
 	Upsert          bool                   `json:"upsert" yaml:"upsert"`
+	Ordered         bool                   `json:"ordered" yaml:"ordered"`
 	HintMap         string                 `json:"hint_map" yaml:"hint_map"`
 	RetryConfig     retries.Config         `json:",inline" yaml:",inline"`
 	JSONMarshalMode client.JSONMarshalMode `json:"json_marshal_mode" yaml:"json_marshal_mode"`
@@ -30,6 +31,7 @@ func NewMongoDBConfig() MongoDBConfig {
 	return MongoDBConfig{
 		MongoDB:         client.NewConfig(),
 		Operation:       "insert-one",
+		Ordered:         true,
 		RetryConfig:     rConf,
 		WriteConcern:    client.WriteConcern{},
 		JSONMarshalMode: client.JSONMarshalModeCanonical,

@@ -79,6 +79,7 @@ output:
     filter_map: ""
     hint_map: ""
     upsert: false
+    ordered: true
     max_in_flight: 64
     batching:
       count: 0
@@ -252,6 +253,15 @@ The upsert setting is optional and only applies for update-one and replace-one o
 Type: `bool`  
 Default: `false`  
 Requires version 3.60.0 or newer  
+
+### `ordered`
+
+A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.
+
+
+Type: `bool`  
+Default: `true`  
+Requires version 4.6.1 or newer  
 
 ### `max_in_flight`
 

@@ -76,6 +76,10 @@ func init() {
 					"The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches,"+
 						"the document is updated or replaced accordingly, otherwise it is created.",
 				).HasDefault(false).AtVersion("3.60.0"),
+				docs.FieldBool(
+					"ordered",
+					"A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.",
+				).HasDefault(true).Advanced().AtVersion("4.6.1"),
 				docs.FieldString(
 					"json_marshal_mode",
 					"The json_marshal_mode setting is optional and controls the format of the output message.",
@@ -346,10 +350,11 @@ func (m *Processor) ProcessBatch(ctx context.Context, spans []*tracing.Span, bat
 		return nil
 	})
 
+	// Dispatch any documents which IterateBatchedSend managed to process successfully
 	if len(writeModelsMap) > 0 {
+		opts := options.BulkWrite().SetOrdered(m.conf.Ordered)
 		for collection, writeModels := range writeModelsMap {
-			// We should have at least one write model in the slice
-			if _, err := collection.BulkWrite(context.Background(), writeModels); err != nil {
+			if _, err := collection.BulkWrite(context.Background(), writeModels, opts); err != nil {
 				m.log.Errorf("Bulk write failed in mongodb processor: %v", err)
 				_ = batch.Iter(func(i int, p *message.Part) error {
 					processor.MarkErr(p, spans[i], err)

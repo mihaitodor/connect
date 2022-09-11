@@ -19,6 +19,7 @@ type MongoDBConfig struct {
 
 	// DeleteEmptyValue bool `json:"delete_empty_value" yaml:"delete_empty_value"`
 	Upsert      bool               `json:"upsert" yaml:"upsert"`
+	Ordered     bool               `json:"ordered" yaml:"ordered"`
 	MaxInFlight int                `json:"max_in_flight" yaml:"max_in_flight"`
 	RetryConfig retries.Config     `json:",inline" yaml:",inline"`
 	Batching    batchconfig.Config `json:"batching" yaml:"batching"`
@@ -35,6 +36,7 @@ func NewMongoDBConfig() MongoDBConfig {
 	return MongoDBConfig{
 		MongoConfig:  client.NewConfig(),
 		Operation:    "update-one",
+		Ordered:      true,
 		MaxInFlight:  64,
 		RetryConfig:  rConf,
 		Batching:     batchconfig.NewConfig(),
