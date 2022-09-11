@@ -146,9 +146,9 @@ Type: `string`
 ```yml
 # Examples
 
-query: |2
-        root.from = {"$lte": timestamp_unix()}
-        root.to = {"$gte": timestamp_unix()}
+query: |-
+  root.from = {"$lte": timestamp_unix()}
+  root.to = {"$gte": timestamp_unix()}
 ```
 
 

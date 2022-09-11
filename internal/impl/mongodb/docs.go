@@ -41,7 +41,6 @@ var urlField = service.NewStringField("url").
 	Description("The URL of the target MongoDB DB.").
 	Example("mongodb://localhost:27017")
 
-var queryField = service.NewBloblangField("query").Description("Bloblang expression describing MongoDB query.").Example(`
-      root.from = {"$lte": timestamp_unix()}
-      root.to = {"$gte": timestamp_unix()}
-`)
+var queryField = service.NewBloblangField("query").Description("Bloblang expression describing MongoDB query.").
+	Example(`root.from = {"$lte": timestamp_unix()}
+root.to = {"$gte": timestamp_unix()}`)
