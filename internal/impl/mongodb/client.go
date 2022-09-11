@@ -17,6 +17,7 @@ func clientFields() []*service.ConfigField {
 			Example("mongodb://localhost:27017"),
 		service.NewStringField("username").Description("The username to connect to the database.").Default(""),
 		service.NewStringField("password").Description("The password to connect to the database.").Default(""),
+		service.NewStringField("database").Description("The name of the target MongoDB database."),
 	}
 }
 

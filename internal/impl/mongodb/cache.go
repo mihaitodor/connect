@@ -24,8 +24,6 @@ func mongodbCacheConfig() *service.ConfigSpec {
 	}
 
 	spec = spec.
-		Field(service.NewStringField("database").
-			Description("The name of the target MongoDB database.")).
 		Field(service.NewStringField("collection").
 			Description("The name of the target collection.")).
 		Field(service.NewStringField("key_field").

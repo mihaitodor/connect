@@ -6,8 +6,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"github.com/benthosdev/benthos/v4/internal/docs"
 )
 
 // Operation represents the operation that will be performed by MongoDB.
@@ -109,17 +107,4 @@ func (m Config) Client() (*mongo.Client, error) {
 	}
 
 	return client, nil
-}
-
-// ConfigDocs returns a documentation field spec for fields within a Config.
-func ConfigDocs() docs.FieldSpecs {
-	return docs.FieldSpecs{
-		docs.FieldString(
-			"url", "The URL of the target MongoDB DB.",
-			"mongodb://localhost:27017",
-		),
-		docs.FieldString("database", "The name of the target MongoDB DB."),
-		docs.FieldString("username", "The username to connect to the database."),
-		docs.FieldString("password", "The password to connect to the database."),
-	}
 }

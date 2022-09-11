@@ -18,7 +18,7 @@ import TabItem from '@theme/TabItem';
 :::caution EXPERIMENTAL
 This component is experimental and therefore subject to change or removal outside of major version releases.
 :::
-Inserts items into a MongoDB collection.
+Performs batch operations on a MongoDB collection.
 
 Introduced in version 3.43.0.
 
@@ -36,9 +36,9 @@ output:
   label: ""
   mongodb:
     url: ""
-    database: ""
     username: ""
     password: ""
+    database: ""
     operation: update-one
     collection: ""
     write_concern:
@@ -49,12 +49,12 @@ output:
     filter_map: ""
     hint_map: ""
     upsert: false
-    max_in_flight: 64
     batching:
       count: 0
       byte_size: 0
       period: ""
       check: ""
+    max_in_flight: 64
 ```
 
 </TabItem>
@@ -66,9 +66,9 @@ output:
   label: ""
   mongodb:
     url: ""
-    database: ""
     username: ""
     password: ""
+    database: ""
     operation: update-one
     collection: ""
     write_concern:
@@ -80,18 +80,13 @@ output:
     hint_map: ""
     upsert: false
     ordered: true
-    max_in_flight: 64
     batching:
       count: 0
       byte_size: 0
       period: ""
       check: ""
       processors: []
-    max_retries: 3
-    backoff:
-      initial_interval: 1s
-      max_interval: 5s
-      max_elapsed_time: 30s
+    max_in_flight: 64
 ```
 
 </TabItem>
@@ -112,25 +107,16 @@ Batches can be formed at both the input and output level. You can find out more
 
 ### `url`
 
-The URL of the target MongoDB DB.
+The URL of the target MongoDB server.
 
 
 Type: `string`  
-Default: `""`  
 
 ```yml
 # Examples
 
 url: mongodb://localhost:27017
 ```
-
-### `database`
-
-The name of the target MongoDB DB.
-
-
-Type: `string`  
-Default: `""`  
 
 ### `username`
 
@@ -148,6 +134,13 @@ The password to connect to the database.
 Type: `string`  
 Default: `""`  
 
+### `database`
+
+The name of the target MongoDB database.
+
+
+Type: `string`  
+
 ### `operation`
 
 The mongodb operation to perform.
@@ -164,7 +157,6 @@ This field supports [interpolation functions](/docs/configuration/interpolation#
 
 
 Type: `string`  
-Default: `""`  
 
 ### `write_concern`
 
@@ -179,7 +171,6 @@ W requests acknowledgement that write operations propagate to the specified numb
 
 
 Type: `string`  
-Default: `""`  
 
 ### `write_concern.j`
 
@@ -187,7 +178,6 @@ J requests acknowledgement from MongoDB that write operations are written to the
 
 
 Type: `bool`  
-Default: `false`  
 
 ### `write_concern.w_timeout`
 
@@ -195,15 +185,13 @@ The write concern timeout.
 
 
 Type: `string`  
-Default: `""`  
 
 ### `document_map`
 
-A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by mapping the fields in the message to the mongodb fields. The document map is required for the operations insert-one, replace-one and update-one.
+A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by mapping the fields in the message to the mongodb fields. The document map is required for the `insert-one`, `replace-one` and `update-one` operations.
 
 
 Type: `string`  
-Default: `""`  
 
 ```yml
 # Examples
@@ -215,11 +203,10 @@ document_map: |-
 
 ### `filter_map`
 
-A bloblang map representing the filter for the mongo db command. The filter map is required for all operations except insert-one. It is used to find the document(s) for the operation. For example in a delete-one case, the filter map should have the fields required to locate the document to delete.
+A bloblang map representing the filter for the mongo db command. The filter map is required for all operations except `insert-one`. It is used to find the document(s) for the operation. For example in a delete-one case, the filter map should have the fields required to locate the document to delete.
 
 
 Type: `string`  
-Default: `""`  
 
 ```yml
 # Examples
@@ -231,11 +218,10 @@ filter_map: |-
 
 ### `hint_map`
 
-A bloblang map representing the hint for the mongo db command. This map is optional and is used with all operations except insert-one. It is used to improve performance of finding the documents in the mongodb.
+A bloblang map representing the hint for the mongo db command. This map is optional and is used with all operations except `insert-one`. It is used to improve performance of finding the documents in the mongodb.
 
 
 Type: `string`  
-Default: `""`  
 
 ```yml
 # Examples
@@ -247,7 +233,7 @@ hint_map: |-
 
 ### `upsert`
 
-The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches,the document is updated or replaced accordingly, otherwise it is created.
+The upsert setting is optional and only applies for `update-one` and `replace-one` operations. If the filter specified in filter_map matches, the document is updated or replaced accordingly, otherwise it is created.
 
 
 Type: `bool`  
@@ -262,14 +248,6 @@ A boolean specifying whether the mongod instance should perform an ordered or un
 Type: `bool`  
 Default: `true`  
 Requires version 4.6.1 or newer  
-
-### `max_in_flight`
-
-The maximum number of parallel message batches to have in flight at any given time.
-
-
-Type: `int`  
-Default: `64`  
 
 ### `batching`
 
@@ -350,7 +328,6 @@ A list of [processors](/docs/components/processors/about) to apply to a batch as
 
 
 Type: `array`  
-Default: `[]`  
 
 ```yml
 # Examples
@@ -368,43 +345,12 @@ processors:
       format: json_array
 ```
 
-### `max_retries`
+### `max_in_flight`
 
-The maximum number of retries before giving up on the request. If set to zero there is no discrete limit.
+The maximum number of parallel message batches to have in flight at any given time.
 
 
 Type: `int`  
-Default: `3`  
-
-### `backoff`
-
-Control time intervals between retry attempts.
-
-
-Type: `object`  
-
-### `backoff.initial_interval`
-
-The initial period to wait between retry attempts.
-
-
-Type: `string`  
-Default: `"1s"`  
-
-### `backoff.max_interval`
-
-The maximum period to wait between retry attempts.
-
-
-Type: `string`  
-Default: `"5s"`  
-
-### `backoff.max_elapsed_time`
-
-The maximum period to wait before retry attempts are abandoned. If zero then no limit is used.
-
-
-Type: `string`  
-Default: `"30s"`  
+Default: `64`  
 
 

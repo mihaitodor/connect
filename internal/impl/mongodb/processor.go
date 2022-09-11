@@ -18,84 +18,82 @@ import (
 	"github.com/benthosdev/benthos/v4/internal/bundle"
 	"github.com/benthosdev/benthos/v4/internal/component/metrics"
 	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/docs"
 	"github.com/benthosdev/benthos/v4/internal/impl/mongodb/client"
 	"github.com/benthosdev/benthos/v4/internal/log"
 	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/old/util/retries"
 	"github.com/benthosdev/benthos/v4/internal/shutdown"
 	"github.com/benthosdev/benthos/v4/internal/tracing"
 )
 
 //------------------------------------------------------------------------------
 
-func init() {
-	err := bundle.AllProcessors.Add(func(c processor.Config, nm bundle.NewManagement) (processor.V1, error) {
-		v2Proc, err := NewProcessor(c, nm)
-		if err != nil {
-			return nil, err
-		}
-		return processor.NewV2BatchedToV1Processor("", v2Proc, nm), nil
-	}, docs.ComponentSpec{
-		Name:       "mongodb",
-		Type:       docs.TypeProcessor,
-		Status:     docs.StatusExperimental,
-		Version:    "3.43.0",
-		Categories: []string{"Integration"},
-		Summary:    `Performs operations against MongoDB for each message, allowing you to store or retrieve data within message payloads.`,
-		Config: docs.FieldComponent().WithChildren(
-			client.ConfigDocs().Add(
-				processorOperationDocs(client.OperationInsertOne),
-				docs.FieldString("collection", "The name of the target collection in the MongoDB DB.").IsInterpolated(),
-				docs.FieldObject(
-					"write_concern",
-					"The write_concern settings for the mongo connection.",
-				).WithChildren(writeConcernDocs()...),
-				docs.FieldBloblang(
-					"document_map",
-					"A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by "+
-						"mapping the fields in the message to the mongodb fields. The document map is required for the operations "+
-						"insert-one, replace-one and update-one.",
-					mapExamples()...,
-				),
-				docs.FieldBloblang(
-					"filter_map",
-					"A bloblang map representing the filter for the mongo db command. The filter map is required for all operations except "+
-						"insert-one. It is used to find the document(s) for the operation. For example in a delete-one case, the filter map should "+
-						"have the fields required to locate the document to delete.",
-					mapExamples()...,
-				),
-				docs.FieldBloblang(
-					"hint_map",
-					"A bloblang map representing the hint for the mongo db command. This map is optional and is used with all operations "+
-						"except insert-one. It is used to improve performance of finding the documents in the mongodb.",
-					mapExamples()...,
-				),
-				docs.FieldBool(
-					"upsert",
-					"The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches,"+
-						"the document is updated or replaced accordingly, otherwise it is created.",
-				).HasDefault(false).AtVersion("3.60.0"),
-				docs.FieldBool(
-					"ordered",
-					"A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.",
-				).HasDefault(true).Advanced().AtVersion("4.6.1"),
-				docs.FieldString(
-					"json_marshal_mode",
-					"The json_marshal_mode setting is optional and controls the format of the output message.",
-				).HasDefault(client.JSONMarshalModeCanonical).Advanced().HasAnnotatedOptions(
-					string(client.JSONMarshalModeCanonical), "A string format that emphasizes type preservation at the expense of readability and interoperability. "+
-						"That is, conversion from canonical to BSON will generally preserve type information except in certain specific cases. ",
-					string(client.JSONMarshalModeRelaxed), "A string format that emphasizes readability and interoperability at the expense of type preservation."+
-						"That is, conversion from relaxed format to BSON can lose type information.",
-				).AtVersion("3.60.0"),
-			).Merge(retries.FieldSpecs())...,
-		).ChildDefaultAndTypesFromStruct(processor.NewMongoDBConfig()),
-	})
-	if err != nil {
-		panic(err)
-	}
-}
+// func init() {
+// 	err := bundle.AllProcessors.Add(func(c processor.Config, nm bundle.NewManagement) (processor.V1, error) {
+// 		v2Proc, err := NewProcessor(c, nm)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		return processor.NewV2BatchedToV1Processor("", v2Proc, nm), nil
+// 	}, docs.ComponentSpec{
+// 		Name:       "mongodb",
+// 		Type:       docs.TypeProcessor,
+// 		Status:     docs.StatusExperimental,
+// 		Version:    "3.43.0",
+// 		Categories: []string{"Integration"},
+// 		Summary:    `Performs operations against MongoDB for each message, allowing you to store or retrieve data within message payloads.`,
+// 		Config: docs.FieldComponent().WithChildren(
+// 			client.ConfigDocs().Add(
+// 				processorOperationDocs(client.OperationInsertOne),
+// 				docs.FieldString("collection", "The name of the target collection in the MongoDB DB.").IsInterpolated(),
+// 				docs.FieldObject(
+// 					"write_concern",
+// 					"The write_concern settings for the mongo connection.",
+// 				).WithChildren(writeConcernDocs()...),
+// 				docs.FieldBloblang(
+// 					"document_map",
+// 					"A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by "+
+// 						"mapping the fields in the message to the mongodb fields. The document map is required for the operations "+
+// 						"insert-one, replace-one and update-one.",
+// 					mapExamples()...,
+// 				),
+// 				docs.FieldBloblang(
+// 					"filter_map",
+// 					"A bloblang map representing the filter for the mongo db command. The filter map is required for all operations except "+
+// 						"insert-one. It is used to find the document(s) for the operation. For example in a delete-one case, the filter map should "+
+// 						"have the fields required to locate the document to delete.",
+// 					mapExamples()...,
+// 				),
+// 				docs.FieldBloblang(
+// 					"hint_map",
+// 					"A bloblang map representing the hint for the mongo db command. This map is optional and is used with all operations "+
+// 						"except insert-one. It is used to improve performance of finding the documents in the mongodb.",
+// 					mapExamples()...,
+// 				),
+// 				docs.FieldBool(
+// 					"upsert",
+// 					"The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches,"+
+// 						"the document is updated or replaced accordingly, otherwise it is created.",
+// 				).HasDefault(false).AtVersion("3.60.0"),
+// 				docs.FieldBool(
+// 					"ordered",
+// 					"A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.",
+// 				).HasDefault(true).Advanced().AtVersion("4.6.1"),
+// 				docs.FieldString(
+// 					"json_marshal_mode",
+// 					"The json_marshal_mode setting is optional and controls the format of the output message.",
+// 				).HasDefault(client.JSONMarshalModeCanonical).Advanced().HasAnnotatedOptions(
+// 					string(client.JSONMarshalModeCanonical), "A string format that emphasizes type preservation at the expense of readability and interoperability. "+
+// 						"That is, conversion from canonical to BSON will generally preserve type information except in certain specific cases. ",
+// 					string(client.JSONMarshalModeRelaxed), "A string format that emphasizes readability and interoperability at the expense of type preservation."+
+// 						"That is, conversion from relaxed format to BSON can lose type information.",
+// 				).AtVersion("3.60.0"),
+// 			).Merge(retries.FieldSpecs())...,
+// 		).ChildDefaultAndTypesFromStruct(processor.NewMongoDBConfig()),
+// 	})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// }
 
 //------------------------------------------------------------------------------
 

@@ -1,40 +1,38 @@
 package mongodb
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/docs"
 	"github.com/benthosdev/benthos/v4/internal/impl/mongodb/client"
 	"github.com/benthosdev/benthos/v4/public/service"
 )
 
-func processorOperationDocs(defaultOperation client.Operation) docs.FieldSpec {
-	fs := outputOperationDocs(defaultOperation)
-	return fs.HasOptions(append(fs.Options, string(client.OperationFindOne))...)
+var defaultOutputOperations = []string{
+	string(client.OperationInsertOne),
+	string(client.OperationDeleteOne),
+	string(client.OperationDeleteMany),
+	string(client.OperationReplaceOne),
+	string(client.OperationUpdateOne),
 }
 
-func outputOperationDocs(defaultOperation client.Operation) docs.FieldSpec {
-	return docs.FieldString(
+func processorOperationDocs(defaultOperation client.Operation) *service.ConfigField {
+	return service.NewStringEnumField(
 		"operation",
-		"The mongodb operation to perform.",
-	).HasOptions(
-		string(client.OperationInsertOne),
-		string(client.OperationDeleteOne),
-		string(client.OperationDeleteMany),
-		string(client.OperationReplaceOne),
-		string(client.OperationUpdateOne),
-	).HasDefault(defaultOperation)
+		append(defaultOutputOperations, string(client.OperationFindOne))...,
+	).Description("The mongodb operation to perform.").Default(defaultOperation)
 }
 
-func writeConcernDocs() docs.FieldSpecs {
-	return docs.FieldSpecs{
-		docs.FieldString("w", "W requests acknowledgement that write operations propagate to the specified number of mongodb instances."),
-		docs.FieldBool("j", "J requests acknowledgement from MongoDB that write operations are written to the journal."),
-		docs.FieldString("w_timeout", "The write concern timeout."),
-	}
+func outputOperationDocs(defaultOperation client.Operation) *service.ConfigField {
+	return service.NewStringEnumField(
+		"operation",
+		defaultOutputOperations...,
+	).Description("The mongodb operation to perform.").Default(defaultOperation)
 }
 
-func mapExamples() []any {
-	examples := []any{"root.a = this.foo\nroot.b = this.bar"}
-	return examples
+func writeConcernDocs() *service.ConfigField {
+	return service.NewObjectField("write_concern",
+		service.NewStringField("w").Description("W requests acknowledgement that write operations propagate to the specified number of mongodb instances."),
+		service.NewBoolField("j").Description("J requests acknowledgement from MongoDB that write operations are written to the journal."),
+		service.NewDurationField("w_timeout").Description("The write concern timeout."),
+	).Description("The write concern settings for the mongo connection.") //.Optional()
 }
 
 var urlField = service.NewStringField("url").
