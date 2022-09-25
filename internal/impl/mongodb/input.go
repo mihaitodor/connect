@@ -62,14 +62,14 @@ func newMongoInput(conf *service.ParsedConfig) (service.Input, error) {
 	if err != nil {
 		return nil, err
 	}
-	database, err := conf.FieldString("database")
-	if err != nil {
-		return nil, err
-	}
-	collection, err := conf.FieldString("collection")
-	if err != nil {
-		return nil, err
-	}
+	// database, err := conf.FieldString("database")
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// collection, err := conf.FieldString("collection")
+	// if err != nil {
+	// 	return nil, err
+	// }
 	username, err := conf.FieldString("username")
 	if err != nil {
 		return nil, err
@@ -95,11 +95,11 @@ func newMongoInput(conf *service.ParsedConfig) (service.Input, error) {
 		return nil, err
 	}
 	config := client.Config{
-		URL:        url,
-		Database:   database,
-		Collection: collection,
-		Username:   username,
-		Password:   password,
+		URL: url,
+		// Database:   database,
+		// Collection: collection,
+		Username: username,
+		Password: password,
 	}
 	return service.AutoRetryNacks(&mongoInput{
 		query:        query,
@@ -131,15 +131,15 @@ func (m *mongoInput) Connect(ctx context.Context) error {
 	if err = m.client.Ping(ctx, nil); err != nil {
 		return fmt.Errorf("ping failed: %v", err)
 	}
-	collection := m.client.Database(m.config.Database).Collection(m.config.Collection)
-	switch m.operation {
-	case "find":
-		m.cursor, err = collection.Find(ctx, m.query)
-	case "aggregate":
-		m.cursor, err = collection.Aggregate(ctx, m.query)
-	default:
-		return fmt.Errorf("opertaion %s not supported. the supported values are \"find\" and \"aggregate\"", m.operation)
-	}
+	// collection := m.client.Database(m.config.Database).Collection(m.config.Collection)
+	// switch m.operation {
+	// case "find":
+	// 	m.cursor, err = collection.Find(ctx, m.query)
+	// case "aggregate":
+	// 	m.cursor, err = collection.Aggregate(ctx, m.query)
+	// default:
+	// 	return fmt.Errorf("opertaion %s not supported. the supported values are \"find\" and \"aggregate\"", m.operation)
+	// }
 	if err != nil {
 		_ = m.client.Disconnect(ctx)
 		return err

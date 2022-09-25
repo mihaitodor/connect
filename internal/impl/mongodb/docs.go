@@ -29,10 +29,10 @@ func outputOperationDocs(defaultOperation client.Operation) *service.ConfigField
 
 func writeConcernDocs() *service.ConfigField {
 	return service.NewObjectField("write_concern",
-		service.NewStringField("w").Description("W requests acknowledgement that write operations propagate to the specified number of mongodb instances."),
+		service.NewStringField("w").Description("W requests acknowledgement that write operations propagate to the specified number of mongodb instances or to mongod instances with specified tags."),
 		service.NewBoolField("j").Description("J requests acknowledgement from MongoDB that write operations are written to the journal."),
 		service.NewDurationField("w_timeout").Description("The write concern timeout."),
-	).Description("The write concern settings for the mongo connection.") //.Optional()
+	).Description("The write concern settings for the mongo connection.").Optional()
 }
 
 var urlField = service.NewStringField("url").

@@ -10,8 +10,8 @@ import (
 type MongoDBConfig struct {
 	MongoConfig client.Config `json:",inline" yaml:",inline"`
 
-	Operation    string              `json:"operation" yaml:"operation"`
-	WriteConcern client.WriteConcern `json:"write_concern" yaml:"write_concern"`
+	Operation string `json:"operation" yaml:"operation"`
+	// WriteConcern client.WriteConcern `json:"write_concern" yaml:"write_concern"`
 
 	FilterMap   string `json:"filter_map" yaml:"filter_map"`
 	DocumentMap string `json:"document_map" yaml:"document_map"`
@@ -34,12 +34,12 @@ func NewMongoDBConfig() MongoDBConfig {
 	rConf.Backoff.MaxElapsedTime = "30s"
 
 	return MongoDBConfig{
-		MongoConfig:  client.NewConfig(),
-		Operation:    "update-one",
-		Ordered:      true,
-		MaxInFlight:  64,
-		RetryConfig:  rConf,
-		Batching:     batchconfig.NewConfig(),
-		WriteConcern: client.WriteConcern{},
+		// MongoConfig:  client.NewConfig(),
+		Operation:   "update-one",
+		Ordered:     true,
+		MaxInFlight: 64,
+		RetryConfig: rConf,
+		Batching:    batchconfig.NewConfig(),
+		// WriteConcern: client.WriteConcern{},
 	}
 }

@@ -7,8 +7,7 @@ import (
 
 // MongoDBConfig contains configuration fields for the MongoDB processor.
 type MongoDBConfig struct {
-	MongoDB      client.Config       `json:",inline" yaml:",inline"`
-	WriteConcern client.WriteConcern `json:"write_concern" yaml:"write_concern"`
+	MongoDB client.Config `json:",inline" yaml:",inline"`
 
 	Operation       string                 `json:"operation" yaml:"operation"`
 	FilterMap       string                 `json:"filter_map" yaml:"filter_map"`
@@ -29,11 +28,10 @@ func NewMongoDBConfig() MongoDBConfig {
 	rConf.Backoff.MaxElapsedTime = "30s"
 
 	return MongoDBConfig{
-		MongoDB:         client.NewConfig(),
+		MongoDB:         client.Config{},
 		Operation:       "insert-one",
 		Ordered:         true,
 		RetryConfig:     rConf,
-		WriteConcern:    client.WriteConcern{},
 		JSONMarshalMode: client.JSONMarshalModeCanonical,
 	}
 }

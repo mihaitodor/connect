@@ -12,18 +12,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 
-	ibatch "github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
 	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/output/batcher"
 	"github.com/benthosdev/benthos/v4/internal/impl/mongodb/client"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
 	"github.com/benthosdev/benthos/v4/internal/shutdown"
+	"github.com/benthosdev/benthos/v4/public/bloblang"
 	"github.com/benthosdev/benthos/v4/public/service"
 )
 
@@ -39,17 +31,16 @@ func snowflakePutOutputConfig() *service.ConfigSpec {
 	}
 
 	spec.Field(outputOperationDocs(client.OperationUpdateOne)).
-		Field(service.NewInterpolatedStringField("collection").Description("The name of the target collection in the MongoDB DB.")).
 		Field(writeConcernDocs()).
 		Field(service.NewBloblangField("document_map").Description(
 			"A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by mapping the fields in the message to the mongodb fields. The document map is required for the `insert-one`, `replace-one` and `update-one` operations.",
-		).Example("root.a = this.foo\nroot.b = this.bar")).
+		).Example("root.a = this.foo\nroot.b = this.bar").Optional()).
 		Field(service.NewBloblangField("filter_map").Description(
 			"A bloblang map representing the filter for the mongo db command. The filter map is required for all operations except `insert-one`. It is used to find the document(s) for the operation. For example in a delete-one case, the filter map should have the fields required to locate the document to delete.",
-		).Example("root.a = this.foo\nroot.b = this.bar")).
+		).Example("root.a = this.foo\nroot.b = this.bar").Optional()).
 		Field(service.NewBloblangField("hint_map").Description(
 			"A bloblang map representing the hint for the mongo db command. This map is optional and is used with all operations except `insert-one`. It is used to improve performance of finding the documents in the mongodb.",
-		).Example("root.a = this.foo\nroot.b = this.bar")).
+		).Example("root.a = this.foo\nroot.b = this.bar").Optional()).
 		Field(service.NewBoolField("upsert").Description("The upsert setting is optional and only applies for `update-one` and `replace-one` operations. If the filter specified in filter_map matches, the document is updated or replaced accordingly, otherwise it is created.").Default(false).Version("3.60.0")).
 		Field(service.NewBoolField("ordered").Description("A boolean specifying whether the mongod instance should perform an ordered or unordered bulk operation execution. If the order doesn't matter, setting this to false can increase write performance.").Default(true).Advanced().Version("4.6.1")).
 		Field(service.NewBatchPolicyField("batching")).
@@ -86,13 +77,136 @@ func init() {
 
 //------------------------------------------------------------------------------
 
-type mongoDBWriter struct {
-	logger *service.Logger
+type mongoDBOutput struct {
+	operation    client.Operation
+	database     string
+	collection   *service.InterpolatedString
+	writeConcern *options.CollectionOptions
+	documentMap  *bloblang.Executor
+	filterMap    *bloblang.Executor
+	hintMap      *bloblang.Executor
+	upsert       bool
+	ordered      bool
+
+	connMut sync.RWMutex
+	client  *mongo.Client
+	db      *mongo.Database
+
+	logger  *service.Logger
+	shutSig *shutdown.Signaller
 }
 
-func newMongoDBOutputFromConfig(conf *service.ParsedConfig, logger *service.Logger, metrics *service.Metrics) (*mongoDBWriter, error) {
-	m := mongoDBWriter{
-		logger: logger,
+func newMongoDBOutputFromConfig(conf *service.ParsedConfig, logger *service.Logger, metrics *service.Metrics) (*mongoDBOutput, error) {
+	m := mongoDBOutput{
+		logger:  logger,
+		shutSig: shutdown.NewSignaller(),
+	}
+
+	var err error
+
+	clientConf := client.Config{}
+
+	if clientConf.URL, err = conf.FieldString("url"); err != nil {
+		return nil, err
+	}
+
+	if clientConf.Username, err = conf.FieldString("username"); err != nil {
+		return nil, err
+	}
+
+	if clientConf.Password, err = conf.FieldString("password"); err != nil {
+		return nil, err
+	}
+
+	if m.database, err = conf.FieldString("database"); err != nil {
+		return nil, err
+	}
+
+	if m.collection, err = conf.FieldInterpolatedString("collection"); err != nil {
+		return nil, err
+	}
+
+	if op, err := conf.FieldString("operation"); err != nil {
+		return nil, err
+	} else {
+		m.operation = client.NewOperation(op)
+	}
+
+	if conf.Contains("write_concern") {
+		var wcOpts []writeconcern.Option
+
+		wcConf := conf.Namespace("write_concern")
+
+		var w string
+		if w, err = wcConf.FieldString("w"); err != nil {
+			return nil, err
+		}
+
+		if instances, err := strconv.Atoi(w); err != nil {
+			wcOpts = append(wcOpts, writeconcern.WTagSet(w))
+		} else {
+			wcOpts = append(wcOpts, writeconcern.W(instances))
+		}
+
+		var j bool
+		if j, err = wcConf.FieldBool("j"); err != nil {
+			return nil, err
+		}
+		wcOpts = append(wcOpts, writeconcern.J(j))
+
+		var timeout time.Duration
+		if timeout, err = wcConf.FieldDuration("w_timeout"); err != nil {
+			return nil, err
+		}
+		wcOpts = append(wcOpts, writeconcern.WTimeout(timeout))
+
+		wc := writeconcern.New(wcOpts...)
+
+		if !wc.IsValid() {
+			return nil, fmt.Errorf("write_concern validation error: %s", err)
+		}
+
+		m.writeConcern = options.Collection().SetWriteConcern(wc)
+	}
+
+	if conf.Contains("document_map") {
+		if !isDocumentAllowed(m.operation) {
+			return nil, fmt.Errorf("mongodb document_map not allowed for '%s' operation", m.operation)
+		} else if m.documentMap, err = conf.FieldBloblang("document_map"); err != nil {
+			return nil, err
+		}
+	}
+
+	if conf.Contains("filter_map") {
+		if !isFilterAllowed(m.operation) {
+			return nil, fmt.Errorf("mongodb filter_map not allowed for '%s' operation", m.operation)
+		} else if m.filterMap, err = conf.FieldBloblang("filter_map"); err != nil {
+			return nil, err
+		}
+	}
+
+	if conf.Contains("hint_map") {
+		if !isHintAllowed(m.operation) {
+			return nil, fmt.Errorf("mongodb hint_map not allowed for '%s' operation", m.operation)
+		} else if m.hintMap, err = conf.FieldBloblang("hint_map"); err != nil {
+			return nil, err
+		}
+	}
+
+	if m.upsert, err = conf.FieldBool("upsert"); err != nil {
+		return nil, err
+	}
+
+	if !isUpsertAllowed(m.operation) && m.upsert {
+		return nil, fmt.Errorf("mongodb upsert not allowed for '%s' operation", m.operation)
+	}
+
+	if m.ordered, err = conf.FieldBool("ordered"); err != nil {
+		return nil, err
+	}
+
+	if m.client, err = clientConf.Client(); err != nil {
+		return nil, err
 	}
 
 	return &m, nil
@@ -101,414 +215,72 @@ func newMongoDBOutputFromConfig(conf *service.ParsedConfig, logger *service.Logg
 //------------------------------------------------------------------------------
 
 // Connect attempts to establish a connection to the target mongo DB
-func (m *mongoDBWriter) Connect(ctx context.Context) error {
-	/*
-		m.mu.Lock()
-		defer m.mu.Unlock()
+func (m *mongoDBOutput) Connect(ctx context.Context) error {
+	m.connMut.Lock()
+	defer m.connMut.Unlock()
 
-		if m.client != nil && m.collection != nil {
-			return nil
-		}
-		if m.client != nil {
-			_ = m.client.Disconnect(ctx)
-		}
-
-		client, err := m.conf.MongoConfig.Client()
-		if err != nil {
-			return fmt.Errorf("failed to create mongodb client: %v", err)
-		}
-
-		if err = client.Connect(ctx); err != nil {
-			return fmt.Errorf("failed to connect: %w", err)
-		}
-
-		if err = client.Ping(ctx, nil); err != nil {
-			return fmt.Errorf("ping failed: %v", err)
-		}
-
-		writeConcern := writeconcern.New(
-			writeconcern.J(m.conf.WriteConcern.J),
-			writeconcern.WTimeout(m.wcTimeout))
-
-		w, err := strconv.Atoi(m.conf.WriteConcern.W)
-		if err != nil {
-			writeconcern.WTagSet(m.conf.WriteConcern.W)
-		} else {
-			writeconcern.W(w)(writeConcern)
-		}
-
-		// This does some validation so we don't have to
-		if _, _, err = writeConcern.MarshalBSONValue(); err != nil {
-			_ = client.Disconnect(ctx)
-			return fmt.Errorf("write_concern validation error: %w", err)
-		}
-
-		m.database = client.Database(m.conf.MongoConfig.Database)
-		m.writeConcernCollectionOption = options.Collection().SetWriteConcern(writeConcern)
-
-		m.client = client
-	*/
-	return nil
-}
-
-// WriteBatch attempts to perform the designated operation to the mongo DB collection.
-func (m *mongoDBWriter) WriteBatch(ctx context.Context, batch service.MessageBatch) error {
-	/*
-		m.mu.Lock()
-		collection := m.collection
-		m.mu.Unlock()
-
-		if collection == nil {
-			return component.ErrNotConnected
-		}
-
-		writeModelsMap := map[*mongo.Collection][]mongo.WriteModel{}
-		err := output.IterateBatchedSend(msg, func(i int, _ *message.Part) error {
-			var err error
-			var filterVal, documentVal *message.Part
-			var upsertVal, filterValWanted, documentValWanted bool
-
-			filterValWanted = isFilterAllowed(m.operation)
-			documentValWanted = isDocumentAllowed(m.operation)
-			upsertVal = m.conf.Upsert
-
-			if filterValWanted {
-				if filterVal, err = m.filterMap.MapPart(i, msg); err != nil {
-					return fmt.Errorf("failed to execute filter_map: %v", err)
-				}
-			}
-
-			if (filterVal != nil || !filterValWanted) && documentValWanted {
-				if documentVal, err = m.documentMap.MapPart(i, msg); err != nil {
-					return fmt.Errorf("failed to execute document_map: %v", err)
-				}
-			}
-
-			if filterVal == nil && filterValWanted {
-				return fmt.Errorf("failed to generate filterVal")
-			}
-
-			if documentVal == nil && documentValWanted {
-				return fmt.Errorf("failed to generate documentVal")
-			}
-
-			var docJSON, filterJSON, hintJSON interface{}
-
-			if filterValWanted {
-				if filterJSON, err = filterVal.AsStructured(); err != nil {
-					return err
-				}
-			}
-
-			if documentValWanted {
-				if docJSON, err = documentVal.AsStructured(); err != nil {
-					return err
-				}
-			}
-
-			if m.hintMap != nil {
-				hintVal, err := m.hintMap.MapPart(i, msg)
-				if err != nil {
-					return fmt.Errorf("failed to execute hint_map: %v", err)
-				}
-				if hintJSON, err = hintVal.AsStructured(); err != nil {
-					return err
-				}
-			}
-
-			var writeModel mongo.WriteModel
-			collection := m.database.Collection(collection.String(i, msg), m.writeConcernCollectionOption)
-
-			switch m.operation {
-			case client.OperationInsertOne:
-				writeModel = &mongo.InsertOneModel{
-					Document: docJSON,
-				}
-			case client.OperationDeleteOne:
-				writeModel = &mongo.DeleteOneModel{
-					Filter: filterJSON,
-					Hint:   hintJSON,
-				}
-			case client.OperationDeleteMany:
-				writeModel = &mongo.DeleteManyModel{
-					Filter: filterJSON,
-					Hint:   hintJSON,
-				}
-			case client.OperationReplaceOne:
-				writeModel = &mongo.ReplaceOneModel{
-					Upsert:      &upsertVal,
-					Filter:      filterJSON,
-					Replacement: docJSON,
-					Hint:        hintJSON,
-				}
-			case client.OperationUpdateOne:
-				writeModel = &mongo.UpdateOneModel{
-					Upsert: &upsertVal,
-					Filter: filterJSON,
-					Update: docJSON,
-					Hint:   hintJSON,
-				}
-			}
-
-			if writeModel != nil {
-				writeModelsMap[collection] = append(writeModelsMap[collection], writeModel)
-			}
-			return nil
-		})
-
-		// Check for fatal errors and exit immediately if we encounter one
-		var batchErr *ibatch.Error
-		if err != nil {
-			if !errors.As(err, &batchErr) {
-				return err
-			}
-		}
-
-		// Dispatch any documents which IterateBatchedSend managed to process successfully
-		if len(writeModelsMap) > 0 {
-			opts := options.BulkWrite().SetOrdered(m.conf.Ordered)
-			for collection, writeModels := range writeModelsMap {
-				if _, err := collection.BulkWrite(context.Background(), writeModels, opts); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Return any errors produced by invalid messages from the batch
-		if batchErr != nil {
-			return batchErr
-		}
-	*/
-	return nil
-}
-
-// Close begins cleaning up resources used by this writer.
-func (m *mongoDBWriter) Close(ctx context.Context) error {
-	/*
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		var err error
-		if m.client != nil {
-			err = m.client.Disconnect(ctx)
-			m.client = nil
-		}
-		m.collection = nil
-		return err
-	*/
-	return nil
-}
-
-//------------------------------------------------------------------------------
-
-// NewOutput creates a new MongoDB output type.
-func NewOutput(conf output.MongoDBConfig, mgr bundle.NewManagement) (output.Streamed, error) {
-	m, err := NewWriter(mgr, conf, mgr.Logger(), mgr.Metrics())
-	if err != nil {
-		return nil, err
-	}
-	var w output.Streamed
-	if w, err = output.NewAsyncWriter("mongodb", conf.MaxInFlight, m, mgr); err != nil {
-		return w, err
-	}
-	return batcher.NewFromConfig(conf.Batching, w, mgr)
-}
-
-// NewWriter creates a new MongoDB writer.Type.
-func NewWriter(
-	mgr bundle.NewManagement,
-	conf output.MongoDBConfig,
-	log log.Modular,
-	stats metrics.Type,
-) (*Writer, error) {
-	// TODO: Remove this after V4 lands and #972 is fixed
-	operation := client.NewOperation(conf.Operation)
-	if operation == client.OperationInvalid {
-		return nil, fmt.Errorf("mongodb operation '%s' unknown: must be insert-one, delete-one, delete-many, replace-one or update-one", conf.Operation)
-	}
-
-	db := &Writer{
-		conf:      conf,
-		log:       log,
-		stats:     stats,
-		operation: operation,
-		shutSig:   shutdown.NewSignaller(),
-	}
-
-	if conf.MongoConfig.URL == "" {
-		return nil, errors.New("mongo url must be specified")
-	}
-
-	if conf.MongoConfig.Database == "" {
-		return nil, errors.New("mongo database must be specified")
-	}
-
-	if conf.MongoConfig.Collection == "" {
-		return nil, errors.New("mongo collection must be specified")
-	}
-
-	bEnv := mgr.BloblEnvironment()
-	var err error
-
-	if isFilterAllowed(db.operation) {
-		if conf.FilterMap == "" {
-			return nil, errors.New("mongodb filter_map must be specified")
-		}
-		if db.filterMap, err = bEnv.NewMapping(conf.FilterMap); err != nil {
-			return nil, fmt.Errorf("failed to parse filter_map: %v", err)
-		}
-	} else if conf.FilterMap != "" {
-		return nil, fmt.Errorf("mongodb filter_map not allowed for '%s' operation", db.operation)
-	}
-
-	if isDocumentAllowed(db.operation) {
-		if conf.DocumentMap == "" {
-			return nil, errors.New("mongodb document_map must be specified")
-		}
-		if db.documentMap, err = bEnv.NewMapping(conf.DocumentMap); err != nil {
-			return nil, fmt.Errorf("failed to parse document_map: %v", err)
-		}
-	} else if conf.DocumentMap != "" {
-		return nil, fmt.Errorf("mongodb document_map not allowed for '%s' operation", db.operation)
-	}
-
-	if isHintAllowed(db.operation) && conf.HintMap != "" {
-		if db.hintMap, err = bEnv.NewMapping(conf.HintMap); err != nil {
-			return nil, fmt.Errorf("failed to parse hint_map: %v", err)
-		}
-	} else if conf.HintMap != "" {
-		return nil, fmt.Errorf("mongodb hint_map not allowed for '%s' operation", db.operation)
-	}
-
-	if !isUpsertAllowed(db.operation) && conf.Upsert {
-		return nil, fmt.Errorf("mongodb upsert not allowed for '%s' operation", db.operation)
-	}
-
-	if len(conf.WriteConcern.WTimeout) > 0 {
-		if db.wcTimeout, err = time.ParseDuration(conf.WriteConcern.WTimeout); err != nil {
-			return nil, fmt.Errorf("failed to parse write concern wtimeout string: %v", err)
-		}
-	}
-	if db.collection, err = mgr.BloblEnvironment().NewField(conf.MongoConfig.Collection); err != nil {
-		return nil, fmt.Errorf("failed to parse collection expression: %v", err)
-	}
-
-	return db, nil
-}
-
-// Writer is a benthos writer.Type implementation that writes messages to an
-// Writer database.
-type Writer struct {
-	conf  output.MongoDBConfig
-	log   log.Modular
-	stats metrics.Type
-
-	wcTimeout time.Duration
-
-	filterMap   *mapping.Executor
-	documentMap *mapping.Executor
-	hintMap     *mapping.Executor
-	operation   client.Operation
-
-	mu                           sync.Mutex
-	client                       *mongo.Client
-	collection                   *field.Expression
-	database                     *mongo.Database
-	writeConcernCollectionOption *options.CollectionOptions
-
-	shutSig *shutdown.Signaller
-}
-
-// Connect attempts to establish a connection to the target mongo DB.
-func (m *Writer) Connect(ctx context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.client != nil && m.collection != nil {
+	if m.db != nil {
 		return nil
 	}
-	if m.client != nil {
-		_ = m.client.Disconnect(ctx)
-	}
 
-	client, err := m.conf.MongoConfig.Client()
-	if err != nil {
-		return fmt.Errorf("failed to create mongodb client: %v", err)
-	}
-
-	if err = client.Connect(ctx); err != nil {
+	if err := m.client.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
-	if err = client.Ping(ctx, nil); err != nil {
+	if err := m.client.Ping(ctx, nil); err != nil {
 		return fmt.Errorf("ping failed: %v", err)
 	}
 
-	writeConcern := writeconcern.New(
-		writeconcern.J(m.conf.WriteConcern.J),
-		writeconcern.WTimeout(m.wcTimeout))
+	m.db = m.client.Database(m.database)
 
-	w, err := strconv.Atoi(m.conf.WriteConcern.W)
-	if err != nil {
-		writeconcern.WTagSet(m.conf.WriteConcern.W)
-	} else {
-		writeconcern.W(w)(writeConcern)
-	}
+	go func() {
+		<-m.shutSig.CloseNowChan()
 
-	// This does some validation so we don't have to
-	if _, _, err = writeConcern.MarshalBSONValue(); err != nil {
-		_ = client.Disconnect(ctx)
-		return fmt.Errorf("write_concern validation error: %w", err)
-	}
+		m.connMut.Lock()
+		_ = m.client.Disconnect(ctx)
+		m.connMut.Unlock()
 
-	m.database = client.Database(m.conf.MongoConfig.Database)
-	m.writeConcernCollectionOption = options.Collection().SetWriteConcern(writeConcern)
+		m.shutSig.ShutdownComplete()
+	}()
 
-	m.client = client
 	return nil
 }
 
 // WriteBatch attempts to perform the designated operation to the mongo DB collection.
-func (m *Writer) WriteBatch(ctx context.Context, msg message.Batch) error {
-	m.mu.Lock()
-	collection := m.collection
-	m.mu.Unlock()
-
-	if collection == nil {
-		return component.ErrNotConnected
-	}
+func (m *mongoDBOutput) WriteBatch(ctx context.Context, batch service.MessageBatch) error {
+	m.connMut.RLock()
+	defer m.connMut.RUnlock()
 
 	writeModelsMap := map[*mongo.Collection][]mongo.WriteModel{}
-	err := output.IterateBatchedSend(msg, func(i int, _ *message.Part) error {
+	for i, msg := range batch {
 		var err error
-		var filterVal, documentVal *message.Part
+		var filterVal, documentVal *service.Message
 		var upsertVal, filterValWanted, documentValWanted bool
 
 		filterValWanted = isFilterAllowed(m.operation)
 		documentValWanted = isDocumentAllowed(m.operation)
-		upsertVal = m.conf.Upsert
 
 		if filterValWanted {
-			if filterVal, err = m.filterMap.MapPart(i, msg); err != nil {
-				return fmt.Errorf("failed to execute filter_map: %v", err)
+			if filterVal, err = batch.BloblangQuery(i, m.filterMap); err != nil {
+				return fmt.Errorf("failed to execute filter_map: %s", err)
 			}
 		}
 
 		if (filterVal != nil || !filterValWanted) && documentValWanted {
-			if documentVal, err = m.documentMap.MapPart(i, msg); err != nil {
-				return fmt.Errorf("failed to execute document_map: %v", err)
+			if documentVal, err = batch.BloblangQuery(i, m.documentMap); err != nil {
+				return fmt.Errorf("failed to execute document_map: %s", err)
 			}
 		}
 
 		if filterVal == nil && filterValWanted {
-			return fmt.Errorf("failed to generate filterVal")
+			return errors.New("failed to generate filterVal")
 		}
 
 		if documentVal == nil && documentValWanted {
-			return fmt.Errorf("failed to generate documentVal")
+			return errors.New("failed to generate documentVal")
 		}
 
-		var docJSON, filterJSON, hintJSON any
+		var docJSON, filterJSON, hintJSON interface{}
 
 		if filterValWanted {
 			if filterJSON, err = filterVal.AsStructured(); err != nil {
@@ -523,17 +295,15 @@ func (m *Writer) WriteBatch(ctx context.Context, msg message.Batch) error {
 		}
 
 		if m.hintMap != nil {
-			hintVal, err := m.hintMap.MapPart(i, msg)
-			if err != nil {
-				return fmt.Errorf("failed to execute hint_map: %v", err)
-			}
-			if hintJSON, err = hintVal.AsStructured(); err != nil {
+			if hintVal, err := batch.BloblangQuery(i, m.hintMap); err != nil {
+				return fmt.Errorf("failed to execute hint_map: %s", err)
+			} else if hintJSON, err = hintVal.AsStructured(); err != nil {
 				return err
 			}
 		}
 
 		var writeModel mongo.WriteModel
-		collection := m.database.Collection(collection.String(i, msg), m.writeConcernCollectionOption)
+		collection := m.db.Collection(m.collection.String(msg), m.writeConcern)
 
 		switch m.operation {
 		case client.OperationInsertOne:
@@ -569,20 +339,11 @@ func (m *Writer) WriteBatch(ctx context.Context, msg message.Batch) error {
 		if writeModel != nil {
 			writeModelsMap[collection] = append(writeModelsMap[collection], writeModel)
 		}
-		return nil
-	})
-
-	// Check for fatal errors and exit immediately if we encounter one
-	var batchErr *ibatch.Error
-	if err != nil {
-		if !errors.As(err, &batchErr) {
-			return err
-		}
 	}
 
 	// Dispatch any documents which IterateBatchedSend managed to process successfully
 	if len(writeModelsMap) > 0 {
-		opts := options.BulkWrite().SetOrdered(m.conf.Ordered)
+		opts := options.BulkWrite().SetOrdered(m.ordered)
 		for collection, writeModels := range writeModelsMap {
 			if _, err := collection.BulkWrite(context.Background(), writeModels, opts); err != nil {
 				return err
@@ -590,23 +351,22 @@ func (m *Writer) WriteBatch(ctx context.Context, msg message.Batch) error {
 		}
 	}
 
-	// Return any errors produced by invalid messages from the batch
-	if batchErr != nil {
-		return batchErr
-	}
 	return nil
 }
 
 // Close begins cleaning up resources used by this writer.
-func (m *Writer) Close(ctx context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var err error
-	if m.client != nil {
-		err = m.client.Disconnect(ctx)
-		m.client = nil
+func (m *mongoDBOutput) Close(ctx context.Context) error {
+	m.shutSig.CloseNow()
+	m.connMut.Lock()
+	isNil := m.client == nil
+	m.connMut.Unlock()
+	if isNil {
+		return nil
 	}
-	m.collection = nil
-	return err
+	select {
+	case <-m.shutSig.HasClosedChan():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
 }

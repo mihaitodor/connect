@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
@@ -141,13 +138,13 @@ func NewProcessor(conf processor.Config, mgr bundle.NewManagement) (processor.V2
 		return nil, errors.New("mongo url must be specified")
 	}
 
-	if conf.MongoDB.MongoDB.Database == "" {
-		return nil, errors.New("mongo database must be specified")
-	}
+	// if conf.MongoDB.MongoDB.Database == "" {
+	// 	return nil, errors.New("mongo database must be specified")
+	// }
 
-	if conf.MongoDB.MongoDB.Collection == "" {
-		return nil, errors.New("mongo collection must be specified")
-	}
+	// if conf.MongoDB.MongoDB.Collection == "" {
+	// 	return nil, errors.New("mongo collection must be specified")
+	// }
 
 	bEnv := mgr.BloblEnvironment()
 	var err error
@@ -198,36 +195,37 @@ func NewProcessor(conf processor.Config, mgr bundle.NewManagement) (processor.V2
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
 
-	var timeout time.Duration
-	if len(conf.MongoDB.WriteConcern.WTimeout) > 0 {
-		if timeout, err = time.ParseDuration(conf.MongoDB.WriteConcern.WTimeout); err != nil {
-			return nil, fmt.Errorf("failed to parse wtimeout string: %v", err)
+	/*
+		var timeout time.Duration
+		if len(conf.MongoDB.WriteConcern.WTimeout) > 0 {
+			if timeout, err = time.ParseDuration(conf.MongoDB.WriteConcern.WTimeout); err != nil {
+				return nil, fmt.Errorf("failed to parse wtimeout string: %v", err)
+			}
 		}
-	}
 
-	writeConcern := writeconcern.New(
-		writeconcern.J(conf.MongoDB.WriteConcern.J),
-		writeconcern.WTimeout(timeout))
+		writeConcern := writeconcern.New(
+			writeconcern.J(conf.MongoDB.WriteConcern.J),
+			writeconcern.WTimeout(timeout))
 
-	w, err := strconv.Atoi(conf.MongoDB.WriteConcern.W)
-	if err != nil {
-		writeconcern.WTagSet(conf.MongoDB.WriteConcern.W)
-	} else {
-		writeconcern.W(w)(writeConcern)
-	}
+		w, err := strconv.Atoi(conf.MongoDB.WriteConcern.W)
+		if err != nil {
+			writeconcern.WTagSet(conf.MongoDB.WriteConcern.W)
+		} else {
+			writeconcern.W(w)(writeConcern)
+		}
 
-	// This does some validation so we don't have to
-	if _, _, err = writeConcern.MarshalBSONValue(); err != nil {
-		return nil, fmt.Errorf("write_concern validation error: %w", err)
-	}
+		// This does some validation so we don't have to
+		if _, _, err = writeConcern.MarshalBSONValue(); err != nil {
+			return nil, fmt.Errorf("write_concern validation error: %w", err)
+		}
 
-	if m.collection, err = mgr.BloblEnvironment().NewField(m.conf.MongoDB.Collection); err != nil {
-		return nil, fmt.Errorf("failed to parse collection expression: %v", err)
-	}
+		if m.collection, err = mgr.BloblEnvironment().NewField(m.conf.MongoDB.Collection); err != nil {
+			return nil, fmt.Errorf("failed to parse collection expression: %v", err)
+		}
 
-	m.database = m.client.Database(conf.MongoDB.MongoDB.Database)
-	m.writeConcernCollectionOption = options.Collection().SetWriteConcern(writeConcern)
-
+		m.database = m.client.Database(conf.MongoDB.MongoDB.Database)
+		m.writeConcernCollectionOption = options.Collection().SetWriteConcern(writeConcern)
+	*/
 	return m, nil
 }
 

@@ -18,6 +18,7 @@ func clientFields() []*service.ConfigField {
 		service.NewStringField("username").Description("The username to connect to the database.").Default(""),
 		service.NewStringField("password").Description("The password to connect to the database.").Default(""),
 		service.NewStringField("database").Description("The name of the target MongoDB database."),
+		service.NewInterpolatedStringField("collection").Description("The name of the target collection in the MongoDB DB."),
 	}
 }
 

@@ -54,7 +54,7 @@ func TestProcessorIntegration(t *testing.T) {
 	var mongoClient *mongo.Client
 	require.NoError(t, pool.Retry(func() error {
 		url := "mongodb://localhost:" + resource.GetPort("27017/tcp")
-		conf := client.NewConfig()
+		conf := client.Config{}
 		conf.URL = url
 		conf.Username = "mongoadmin"
 		conf.Password = "secret"
@@ -99,20 +99,15 @@ func testMongoDBProcessorInsert(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	mongoConfig := processor.MongoDBConfig{
-		MongoDB: c,
-		WriteConcern: client.WriteConcern{
-			W:        "1",
-			J:        false,
-			WTimeout: "",
-		},
+		MongoDB:     c,
 		Operation:   "insert-one",
 		DocumentMap: "root.a = this.foo\nroot.b = this.bar",
 	}
@@ -170,20 +165,15 @@ func testMongoDBProcessorDeleteOne(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	mongoConfig := processor.MongoDBConfig{
-		MongoDB: c,
-		WriteConcern: client.WriteConcern{
-			W:        "1",
-			J:        false,
-			WTimeout: "100s",
-		},
+		MongoDB:   c,
 		Operation: "delete-one",
 		FilterMap: "root.a = this.foo\nroot.b = this.bar",
 	}
@@ -229,20 +219,15 @@ func testMongoDBProcessorDeleteMany(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	mongoConfig := processor.MongoDBConfig{
-		MongoDB: c,
-		WriteConcern: client.WriteConcern{
-			W:        "1",
-			J:        false,
-			WTimeout: "100s",
-		},
+		MongoDB:   c,
 		Operation: "delete-many",
 		FilterMap: "root.a = this.foo\nroot.b = this.bar",
 	}
@@ -289,20 +274,15 @@ func testMongoDBProcessorReplaceOne(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	mongoConfig := processor.MongoDBConfig{
-		MongoDB: c,
-		WriteConcern: client.WriteConcern{
-			W:        "1",
-			J:        false,
-			WTimeout: "",
-		},
+		MongoDB:     c,
 		Operation:   "replace-one",
 		DocumentMap: "root.a = this.foo\nroot.b = this.bar",
 		FilterMap:   "root.a = this.foo",
@@ -353,20 +333,15 @@ func testMongoDBProcessorUpdateOne(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	mongoConfig := processor.MongoDBConfig{
-		MongoDB: c,
-		WriteConcern: client.WriteConcern{
-			W:        "1",
-			J:        false,
-			WTimeout: "100s",
-		},
+		MongoDB:     c,
 		Operation:   "update-one",
 		DocumentMap: `root = {"$set": {"a": this.foo, "b": this.bar}}`,
 		FilterMap:   "root.a = this.foo",
@@ -417,20 +392,15 @@ func testMongoDBProcessorFindOne(port string, t *testing.T) {
 	conf.Type = "mongodb"
 
 	c := client.Config{
-		URL:        "mongodb://localhost:" + port,
-		Database:   "TestDB",
-		Collection: "TestCollection",
-		Username:   "mongoadmin",
-		Password:   "secret",
+		URL: "mongodb://localhost:" + port,
+		// Database:   "TestDB",
+		// Collection: "TestCollection",
+		Username: "mongoadmin",
+		Password: "secret",
 	}
 
 	conf.MongoDB = processor.NewMongoDBConfig()
 	conf.MongoDB.MongoDB = c
-	conf.MongoDB.WriteConcern = client.WriteConcern{
-		W:        "1",
-		J:        false,
-		WTimeout: "100s",
-	}
 	conf.MongoDB.Operation = "find-one"
 	conf.MongoDB.FilterMap = "root.a = this.a"
 
@@ -478,9 +448,9 @@ func testMongoDBProcessorFindOne(port string, t *testing.T) {
 			expected:    `{"a":"foo","b":"bar","c":"baz","answer_to_everything":{"$numberInt":"42"}}`,
 		},
 	} {
-		if tt.collection != "" {
-			conf.MongoDB.MongoDB.Collection = tt.collection
-		}
+		// if tt.collection != "" {
+		// 	conf.MongoDB.MongoDB.Collection = tt.collection
+		// }
 
 		conf.MongoDB.JSONMarshalMode = tt.marshalMode
 

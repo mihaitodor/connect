@@ -60,29 +60,16 @@ const (
 
 // Config is a config struct for a mongo connection.
 type Config struct {
-	URL        string `json:"url" yaml:"url"`
-	Database   string `json:"database" yaml:"database"`
-	Collection string `json:"collection" yaml:"collection"`
-	Username   string `json:"username" yaml:"username"`
-	Password   string `json:"password" yaml:"password"`
+	URL      string
+	Username string
+	Password string
 }
 
 // WriteConcern describes a write concern for MongoDB.
-type WriteConcern struct {
-	W        string `json:"w" yaml:"w"`
-	J        bool   `json:"j" yaml:"j"`
-	WTimeout string `json:"w_timeout" yaml:"w_timeout"`
-}
-
-// NewConfig returns a Config with default values.
-func NewConfig() Config {
-	return Config{
-		URL:        "",
-		Database:   "",
-		Collection: "",
-		Username:   "",
-		Password:   "",
-	}
+type WriteConcern1 struct {
+	W        string
+	J        bool
+	WTimeout string
 }
 
 // Client returns a new mongodb client based on the configuration parameters.
