@@ -501,6 +501,20 @@ func (b MessageBatch) TryInterpolatedString(index int, i *InterpolatedString) (s
 	return i.expr.String(index, msg)
 }
 
+// TryInterpolatedAny resolves an interpolated string expression on a message
+// batch, from the perspective of a particular message index.
+//
+// This method allows interpolation functions to perform windowed aggregations
+// across message batches, and is a more powerful way to interpolate strings
+// than the standard .String method.
+func (b MessageBatch) TryInterpolatedAny(index int, i *InterpolatedString) (any, error) {
+	msg := make(message.Batch, len(b))
+	for i, m := range b {
+		msg[i] = m.part
+	}
+	return i.expr.Any(index, msg)
+}
+
 // TryInterpolatedBytes resolves an interpolated string expression on a message
 // batch, from the perspective of a particular message index.
 //

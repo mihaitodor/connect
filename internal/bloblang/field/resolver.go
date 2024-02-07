@@ -12,6 +12,7 @@ import (
 type Resolver interface {
 	ResolveString(index int, msg Message, escaped bool) (string, error)
 	ResolveBytes(index int, msg Message, escaped bool) ([]byte, error)
+	ResolveAny(index int, msg Message) (any, error)
 }
 
 //------------------------------------------------------------------------------
@@ -28,6 +29,11 @@ func (s StaticResolver) ResolveString(index int, msg Message, escaped bool) (str
 // ResolveBytes returns a byte slice.
 func (s StaticResolver) ResolveBytes(index int, msg Message, escaped bool) ([]byte, error) {
 	return []byte(s), nil
+}
+
+// ResolveAny returns an object containing a string.
+func (s StaticResolver) ResolveAny(index int, msg Message) (any, error) {
+	return string(s), nil
 }
 
 //------------------------------------------------------------------------------
@@ -91,4 +97,22 @@ func escapeBytes(in []byte) []byte {
 		return in
 	}
 	return []byte(quoted[1 : len(quoted)-1])
+}
+
+// ResolveString returns a structured object.
+func (q QueryResolver) ResolveAny(index int, msg Message) (any, error) {
+	if msg == nil {
+		msg = message.QuickBatch(nil)
+	}
+
+	return q.fn.Exec(query.FunctionContext{
+		Index:    index,
+		MsgBatch: msg,
+		NewMeta:  msg.Get(index),
+	}.WithValueFunc(func() *any {
+		if jObj, err := msg.Get(index).AsStructured(); err == nil {
+			return &jObj
+		}
+		return nil
+	}))
 }

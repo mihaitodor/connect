@@ -65,6 +65,21 @@ func (e *Expression) resolve(index int, msg Message, escaped bool) ([]byte, erro
 	return buf.Bytes(), nil
 }
 
+func (e *Expression) resolveAny(index int, msg Message) (any, error) {
+	if len(e.resolvers) == 1 {
+		return e.resolvers[0].ResolveAny(index, msg)
+	}
+	var buf bytes.Buffer
+	for _, r := range e.resolvers {
+		b, err := r.ResolveBytes(index, msg, false)
+		if err != nil {
+			return nil, err
+		}
+		_, _ = buf.Write(b)
+	}
+	return buf.String(), nil
+}
+
 // NumDynamicExpressions returns the number of dynamic interpolation functions
 // within the expression.
 func (e *Expression) NumDynamicExpressions() int {
@@ -91,4 +106,13 @@ func (e *Expression) String(index int, msg Message) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// Any returns an object representing the expression resolved for a message of a
+// batch.
+func (e *Expression) Any(index int, msg Message) (any, error) {
+	if len(e.resolvers) == 0 {
+		return e.static, nil
+	}
+	return e.resolveAny(index, msg)
 }

@@ -58,6 +58,12 @@ func (i *InterpolatedString) TryBytes(m *Message) ([]byte, error) {
 	return i.expr.Bytes(0, fauxOldMessage{m.part})
 }
 
+// TryAny resolves the interpolated field for a given message as an object,
+// returns an error if any interpolation functions fail.
+func (i *InterpolatedString) TryAny(m *Message) (any, error) {
+	return i.expr.Any(0, fauxOldMessage{m.part})
+}
+
 // String resolves the interpolated field for a given message as a string.
 // Deprecated: Use TryString instead in order to capture errors.
 func (i *InterpolatedString) String(m *Message) string {
