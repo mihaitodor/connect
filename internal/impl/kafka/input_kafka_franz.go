@@ -649,6 +649,8 @@ func (f *franzKafkaReader) Connect(ctx context.Context) error {
 		return err
 	}
 
+	setKafkaFranzInput(f.res.Label(), cl, f.topics)
+
 	go func() {
 		defer func() {
 			cl.Close()

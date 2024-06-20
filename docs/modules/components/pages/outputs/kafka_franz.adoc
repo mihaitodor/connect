@@ -87,6 +87,7 @@ output:
       client_certs: []
     sasl: [] # No default (optional)
     timestamp: ${! timestamp_unix() } # No default (optional)
+    topic_source: "" # No default (optional)
 ```
 
 --
@@ -768,5 +769,13 @@ timestamp: ${! timestamp_unix() }
 
 timestamp: ${! metadata("kafka_timestamp_unix") }
 ```
+
+=== `topic_source`
+
+A kafka_franz input resource from which to read the list of topics which need to be created.
+
+
+*Type*: `string`
+
 
 

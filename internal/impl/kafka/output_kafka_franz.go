@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 
@@ -88,6 +89,10 @@ This output often out-performs the traditional ` + "`kafka`" + ` output as well 
 			Example(`${! timestamp_unix() }`).
 			Example(`${! metadata("kafka_timestamp_unix") }`).
 			Optional()).
+		Field(service.NewStringField("topic_source").
+			Description("A kafka_franz input resource from which to read the list of topics which need to be created.").
+			Optional().
+			Advanced()).
 		LintRule(`
 root = if this.partitioner == "manual" {
   if this.partition.or("") == "" {
@@ -138,8 +143,10 @@ type franzKafkaWriter struct {
 	timeout          time.Duration
 	produceMaxBytes  int32
 	compressionPrefs []kgo.CompressionCodec
+	topicSource      string
 
-	client *kgo.Client
+	client              *kgo.Client
+	outputTopicsCreated bool
 
 	log *service.Logger
 }
@@ -271,6 +278,12 @@ func newFranzKafkaWriterFromConfig(conf *service.ParsedConfig, log *service.Logg
 		}
 	}
 
+	if conf.Contains("topic_source") {
+		if f.topicSource, err = conf.FieldString("topic_source"); err != nil {
+			return nil, err
+		}
+	}
+
 	return &f, nil
 }
 
@@ -310,6 +323,50 @@ func (f *franzKafkaWriter) Connect(ctx context.Context) error {
 	}
 
 	f.client = cl
+
+	if !f.outputTopicsCreated && f.topicSource != "" {
+		println("creating topics...")
+
+		input, err := getKafkaFranzInput(f.topicSource)
+		if err != nil {
+			return fmt.Errorf("failed to fetch input %q: %s", f.topicSource, err)
+		}
+
+		inputTopics, err := kadm.NewClient(input.client).ListTopics(ctx, input.topics...)
+		if err != nil {
+			return fmt.Errorf("failed to fetch topics from input: %s", err)
+		}
+
+		outputAdminClient := kadm.NewClient(f.client)
+		outputTopics, err := outputAdminClient.ListTopics(ctx, input.topics...)
+		if err != nil {
+			return fmt.Errorf("failed to fetch topics from output: %s", err)
+		}
+
+		for _, t := range inputTopics {
+			// TODO: Check if the topics already exist and error out if the partition count is different
+			if outputTopics.Has(t.Topic) {
+				continue
+			}
+
+			partitions := int32(len(t.Partitions))
+			if partitions == 0 {
+				partitions = -1
+			}
+			replicationFactor := int16(t.Partitions.NumReplicas())
+			if replicationFactor == 0 {
+				replicationFactor = -1
+			}
+
+			_, err := outputAdminClient.CreateTopic(ctx, partitions, replicationFactor, nil, t.Topic)
+			if err != nil {
+				return fmt.Errorf("failed to create topic %q: %s", t.Topic, err)
+			}
+		}
+
+		f.outputTopicsCreated = true
+	}
+
 	return nil
 }
 
