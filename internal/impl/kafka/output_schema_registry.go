@@ -205,6 +205,14 @@ func (o *schemaRegistryOutput) Connect(ctx context.Context) error {
 		}
 	}
 
+	subjects, err := o.client.GetSubjects(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to fetch subjects: %s", err)
+	}
+
+	// TODO: Store these in a sync.Map
+	_ = subjects
+
 	o.connected.Store(true)
 
 	return nil

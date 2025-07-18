@@ -105,14 +105,15 @@ type schemaRegistryInput struct {
 	fetchInOrder   bool
 	includeDeleted bool
 
-	client    *sr.Client
-	connMut   sync.Mutex
-	connected bool
-	subjects  []string
-	subject   string
-	versions  []int
-	schemas   []franz_sr.SubjectSchema
-	mgr       *service.Resources
+	client                *sr.Client
+	connMut               sync.Mutex
+	connected             bool
+	subjects              []string
+	subjectsCompatibility map[string]franz_sr.SetCompatibility
+	subject               string
+	versions              []int
+	schemas               []franz_sr.SubjectSchema
+	mgr                   *service.Resources
 }
 
 func inputFromParsed(pConf *service.ParsedConfig, mgr *service.Resources) (i *schemaRegistryInput, err error) {
@@ -187,6 +188,26 @@ func (i *schemaRegistryInput) Connect(ctx context.Context) error {
 	for _, s := range subjects {
 		if i.subjectFilter.MatchString(s) {
 			i.subjects = append(i.subjects, s)
+		}
+	}
+
+	i.subjectsCompatibility = make(map[string]franz_sr.SetCompatibility)
+	compatibility := i.client.Client.Compatibility(ctx, i.subjects...)
+	for _, c := range compatibility {
+		if c.Err != nil {
+			// TODO: Should we fail here?
+			continue
+		}
+
+		i.subjectsCompatibility[c.Subject] = franz_sr.SetCompatibility{
+			Level:            c.Level,
+			Alias:            c.Alias,
+			Normalize:        c.Normalize,
+			Group:            c.Group,
+			DefaultMetadata:  c.DefaultMetadata,
+			OverrideMetadata: c.OverrideMetadata,
+			DefaultRuleSet:   c.DefaultRuleSet,
+			OverrideRuleSet:  c.OverrideRuleSet,
 		}
 	}
 
@@ -294,6 +315,7 @@ func (i *schemaRegistryInput) Read(ctx context.Context) (*service.Message, servi
 
 	msg.MetaSetMut("schema_registry_subject", si.Subject)
 	msg.MetaSetMut("schema_registry_version", si.Version)
+	msg.MetaSetMut("schema_registry_compatibility", i.subjectsCompatibility[si.Subject])
 
 	return msg, func(context.Context, error) error {
 		// Nacks are handled by AutoRetryNacks because we don't have an explicit
